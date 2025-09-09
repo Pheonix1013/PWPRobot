@@ -56,5 +56,4 @@ Label(userLog, text="User Log", font=("Arial", 16)).grid(row=0, column=0, pady=5
 
 
 
-
 root.mainloop()
