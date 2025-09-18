@@ -6,11 +6,11 @@ import robot_gui_window
 #makes the login root
 root = Tk()
 root.title("Login / Signup")
-root.geometry("400x300")
+root.geometry("1920x1080")
 
 
 #function stuff
-def signup():
+def makeAccount():
     username = entry_username.get().strip()
     password = entry_password.get().strip()
 
@@ -34,7 +34,7 @@ def login():
     else:
         retry = messagebox.askyesno("Failed", "Username or password not found. Create new account?")
         if retry:
-            signup()
+            makeAccount()
 
 #Making the text feilds
 Label(root, text="Username:").pack(pady=(20, 5))
@@ -46,6 +46,6 @@ entry_password = Entry(root, show="*")
 entry_password.pack(pady=5)
 
 Button(root, text="Login", width=10, command=login).pack(pady=10)
-Button(root, text="Signup", width=10, command=signup).pack(pady=5)
+Button(root, text="Signup", width=10, command=makeAccount).pack(pady=5)
 
 root.mainloop()
