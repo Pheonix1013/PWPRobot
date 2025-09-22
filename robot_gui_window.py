@@ -1,4 +1,7 @@
 from tkinter import *
+import requests
+
+api_url = "http://127.0.0.1:5000"
 
 def open_robot_gui(username):
     robot_window = Toplevel()
@@ -30,12 +33,16 @@ def open_robot_gui(username):
     controlPanel.place(relx=0.5, rely=0.5, anchor="center")
     arrow_font = ("Arial", 28)
 
-    upBtn    = Button(controlPanel, text="↑", font=arrow_font)
-    leftBtn  = Button(controlPanel, text="←", font=arrow_font)
-    playBtn  = Button(controlPanel, text="Play", font=arrow_font)
-    rightBtn = Button(controlPanel, text="→", font=arrow_font)
-    stopBtn  = Button(controlPanel, text="Stop", font=arrow_font)
-    downBtn  = Button(controlPanel, text="↓", font=arrow_font)
+    def toggle_direction(direction):
+        response = requests.post(f"{api_url}/{direction}")
+
+
+    upBtn = Button(controlPanel, text="↑", font=arrow_font, command=lambda: toggle_direction("forward"))
+    leftBtn = Button(controlPanel, text="←", font=arrow_font, command=lambda: toggle_direction("left"))
+    playBtn = Button(controlPanel, text="Play", font=arrow_font)
+    rightBtn = Button(controlPanel, text="→", font=arrow_font, command=lambda: toggle_direction("right"))
+    stopBtn = Button(controlPanel, text="Stop", font=arrow_font)
+    downBtn = Button(controlPanel, text="↓", font=arrow_font, command=lambda: toggle_direction("backward"))
 
     upBtn.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
     leftBtn.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
