@@ -1,9 +1,22 @@
+#import neccesary libraries
 from tkinter import *
 import requests
 
+#store the private ip and the port number for the api website
 api_url = "http://127.0.0.1:5000"
 
 def open_robot_gui(username):
+    """
+    Create the display for the GUI
+    
+    Parameters:
+    username
+    
+    Return:
+    None
+    """
+    
+    #Create the frame window
     robot_window = Toplevel()
     robot_window.title(f"Robot GUI - signed into: {username}")
     robot_window.geometry("1920x1080")
@@ -32,11 +45,21 @@ def open_robot_gui(username):
     controlPanel = Frame(controller)
     controlPanel.place(relx=0.5, rely=0.5, anchor="center")
     arrow_font = ("Arial", 28)
-
+	
+    #make function to toggle direction
     def toggle_direction(direction):
+        """
+        Runs the api commmand to move in a certain direction
+        
+        Parameters:
+        direction
+        
+        Return:
+        None
+        """
         response = requests.post(f"{api_url}/{direction}")
 
-
+	#create buttons and call functions for the button command
     upBtn = Button(controlPanel, text="↑", font=arrow_font, command=lambda: toggle_direction("forward"))
     leftBtn = Button(controlPanel, text="←", font=arrow_font, command=lambda: toggle_direction("left"))
     playBtn = Button(controlPanel, text="Play", font=arrow_font)
@@ -44,6 +67,7 @@ def open_robot_gui(username):
     stopBtn = Button(controlPanel, text="Stop", font=arrow_font)
     downBtn = Button(controlPanel, text="↓", font=arrow_font, command=lambda: toggle_direction("backward"))
 
+	#grid the buttons
     upBtn.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
     leftBtn.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
     playBtn.grid(row=1, column=1, sticky="nsew", padx=2, pady=2)
