@@ -1,3 +1,4 @@
+#import all libraries and other files
 from tkinter import *
 from tkinter import messagebox
 import database
@@ -11,6 +12,16 @@ root.geometry("1920x1080")
 
 #function stuff
 def makeAccount():
+    """
+    Make account display function
+    
+    Parameters:
+    None
+    
+    Return:
+    None
+    """
+    
     username = entry_username.get().strip()
     password = entry_password.get().strip()
 
@@ -25,6 +36,15 @@ def makeAccount():
 
 
 def login():
+    """
+    Make login display
+    
+    Parameters:
+    None
+    
+    Return:
+    None
+    """
     username = entry_username.get().strip()
     password = entry_password.get().strip()
 
@@ -48,4 +68,5 @@ entry_password.pack(pady=5)
 Button(root, text="Login", width=10, command=login).pack(pady=10)
 Button(root, text="Signup", width=10, command=makeAccount).pack(pady=5)
 
+#Contstantly updates the screen
 root.mainloop()
