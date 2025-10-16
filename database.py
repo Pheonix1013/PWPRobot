@@ -1,5 +1,7 @@
+#import necessary packagees
 import sqlite3
 
+#connect to the file that stores username and passwords
 conn = sqlite3.connect("users.db")
 c = conn.cursor()
 
@@ -14,6 +16,16 @@ CREATE TABLE IF NOT EXISTS Users (
 conn.commit()
 
 def add_user(username, password):
+    """
+    Create users, and add to the file with all users.
+    
+    Parameters:
+    username, password
+    
+    Return:
+    True, False
+    """
+    
     try:
         c.execute("INSERT INTO Users (Username, Password) VALUES (?, ?)", (username, password))
         conn.commit()
@@ -22,5 +34,14 @@ def add_user(username, password):
         return False
 
 def authenticate(username, password):
+    """
+    Authenticate the user trying to login
+    
+    Parameters: 
+    username, password
+    
+    Return:
+    True, False
+    """
     c.execute("SELECT * FROM Users WHERE Username=? AND Password=?", (username, password))
     return c.fetchone() is not None
