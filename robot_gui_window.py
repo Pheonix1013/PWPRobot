@@ -36,12 +36,12 @@ def open_robot_gui(username):
     def toggle_direction(direction):
         response = requests.post(f"{api_url}/{direction}")
 
-
+    
     upBtn = Button(controlPanel, text="↑", font=arrow_font, command=lambda: toggle_direction("forward"))
     leftBtn = Button(controlPanel, text="←", font=arrow_font, command=lambda: toggle_direction("left"))
     playBtn = Button(controlPanel, text="Play", font=arrow_font)
     rightBtn = Button(controlPanel, text="→", font=arrow_font, command=lambda: toggle_direction("right"))
-    stopBtn = Button(controlPanel, text="Stop", font=arrow_font)
+    stopBtn = Button(controlPanel, text="Stop", font=arrow_font, command=lambda: toggle_direction("stop"))
     downBtn = Button(controlPanel, text="↓", font=arrow_font, command=lambda: toggle_direction("backward"))
 
     upBtn.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
