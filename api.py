@@ -12,6 +12,15 @@ controls = {
 
 @app.route("/<direction>", methods=["POST"])
 def move(direction):
+    """
+    Create dynamic API that changes the direction
+    
+    Parameters:
+    Direction
+    
+    Return:
+    json file of the new status
+    """
     for value in controls:
         controls[value] = False
     controls[direction] = not controls[direction]
@@ -19,13 +28,30 @@ def move(direction):
 
 @app.route("/stop", methods=["POST"])
 def stop():
+    """
+    Turns all movement to False
+    
+    Parameters:
+    None
+    
+    Return:
+    None
+    """
     for value in controls:
         controls[value] = False
 
 
 @app.route("/status", methods=["GET"])
 def status():
-    #return jsonify(controls)
+    """
+    Just displays all the controls to the /status branch
+    
+    Parameters:
+    None
+    
+    Return:
+    The new status of the controls
+    """
     return controls
 
 if __name__ == "__main__":
