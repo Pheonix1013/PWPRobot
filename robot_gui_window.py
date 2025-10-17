@@ -4,6 +4,15 @@ import requests
 api_url = "http://127.0.0.1:5000"
 
 def open_robot_gui(username):
+    """
+    Make the GUI window
+    
+    Parameters:
+    username
+    
+    Return:
+    None
+    """
     robot_window = Toplevel()
     robot_window.title(f"Robot GUI - signed into: {username}")
     robot_window.geometry("1920x1080")
@@ -34,6 +43,15 @@ def open_robot_gui(username):
     arrow_font = ("Arial", 28)
 
     def toggle_direction(direction):
+        """
+        Toggle the direction and update API
+        
+        Parameters:
+        direction
+        
+        Return:
+        None
+        """
         response = requests.post(f"{api_url}/{direction}")
 
     
