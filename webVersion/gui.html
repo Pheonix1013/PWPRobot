@@ -20,7 +20,7 @@
           </tr>
           <tr align="center">
             <td><button onclick="sendCommand('left')">&#8592;</button></td> <!-- ← -->
-            <td><button onclick="sendCommand('stop')">&#9632;</button></td> <!-- ■ -->
+            <td><button onclick="stopMotor()">&#9632;</button></td> <!-- ■ -->
             <td><button onclick="sendCommand('right')">&#8594;</button></td> <!-- → -->
           </tr>
           <tr align="center">
@@ -48,6 +48,19 @@
     async function sendCommand(direction) {
       try {
         const response = await fetch(`${API_BASE}/${direction}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        const data = await response.json();
+        console.log("Response:", data);
+      } catch (error) {
+        console.error("Error sending command:", error);
+      }
+    }
+
+    async function stopMotor() {
+      try {
+        const response = await fetch(`${API_BASE}/stop`, {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         });
