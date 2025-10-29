@@ -19,13 +19,16 @@ controls = {
     "left": False,
     "right": False
 }
+# POST /stop
+@app.post("/stop")
+async def stop():
+    for key in controls:
+        controls[key] = False
+    return {"message": "All movements stopped"}
 
 # POST /<direction>
 @app.post("/{direction}")
 async def move(direction: str):
-    if direction not in controls:
-        return {"error": "Invalid direction"}
-
     # Reset all controls
     for key in controls:
         controls[key] = False
@@ -35,12 +38,7 @@ async def move(direction: str):
 
     return {direction: controls[direction]}
 
-# POST /stop
-@app.post("/stop")
-async def stop():
-    for key in controls:
-        controls[key] = False
-    return {"message": "All movements stopped"}
+
 
 # GET /status
 @app.get("/status")
