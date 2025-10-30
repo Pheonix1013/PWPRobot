@@ -1,46 +1,43 @@
+#import libraries
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Enable CORS so your GUI can talk to it
+# Enable CORS so the GUI can talk to it basically
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins for simplicity
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Robot controls state
+#Dictionary of possible controls
 controls = {
     "forward": False,
     "backward": False,
     "left": False,
     "right": False
 }
-# POST /stop
+#Get the bot to stop and set everything to false
 @app.post("/stop")
 async def stop():
     for key in controls:
         controls[key] = False
     return {"message": "All movements stopped"}
 
-# POST /<direction>
+#Send post reqeusts for the directin, first set everything to false and then set the right one to true
 @app.post("/{direction}")
 async def move(direction: str):
-    # Reset all controls
     for key in controls:
         controls[key] = False
-
-    # Toggle selected direction
     controls[direction] = not controls[direction]
-
     return {direction: controls[direction]}
 
 
 
-# GET /status
+#Sebd get request to display the dictionary so we can trouble shoot
 @app.get("/status")
 async def status():
     return controls
