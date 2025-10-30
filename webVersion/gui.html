@@ -1,10 +1,13 @@
+<!--Set up basic stuff for html file to work-->
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
+  <!--Make title-->
   <title>PWP Robot Control</title>
 </head>
 <body>
+  <!--Set up 4 quadrant lines and borders-->
   <table border="1" width="100%" height="100%">
     <tr height="50%">
       <td width="50%" align="center" valign="middle">
@@ -15,6 +18,7 @@
         <table>
           <tr align="center">
             <td></td>
+            <!--Make all the buttons send their respective command (the fucntion is defined below)-->
             <td><button onclick="sendCommand('forward')">&#8593;</button></td> <!-- ↑ -->
             <td></td>
           </tr>
@@ -34,6 +38,7 @@
 
     <tr height="50%">
       <td width="50%" align="center" valign="middle">
+        <!--Finish bottom two quadrants-->
         <h3>Placeholder (bottom-left)</h3>
       </td>
       <td width="50%" align="center" valign="middle">
@@ -43,9 +48,20 @@
   </table>
 
   <script>
-    const API_BASE = "http://127.0.0.1:5000"; // change to your Pi IP if needed
+    //Javascript stuff
+    //Set API variable
+    const API_BASE = "http://127.0.0.1:5000";
 
     async function sendCommand(direction) {
+      /*
+      Thsi function sends the command to the api
+
+      Parameters:
+      direction - string
+
+      Return:
+      None
+      */
       try {
         const response = await fetch(`${API_BASE}/${direction}`, {
           method: "POST",
@@ -59,6 +75,15 @@
     }
 
     async function stopMotor() {
+      /*
+      Seperate function for the purpose of stopping the motors
+
+      Parameters:
+      None - because there is no direction needed for stop
+
+      Return:
+      None
+      */
       try {
         const response = await fetch(`${API_BASE}/stop`, {
           method: "POST",
