@@ -1,13 +1,22 @@
-#imports all the necessary libraries
-from PCA9685 import PCA9685
+# This file is now the client running on the Raspberry Pi.
 
+# It polls the Mac API server (172.20.140.4:5000) for the current command state.
+
+
+import cv2
+import requests
+import base64
+import threading
+from PCA9685 import PCA9685
 import time
 
-import requests
 
 
 
-#This is list of all of our commands
+# --- Configuration ---
+
+# Fix: Added comma to Dir list and defined all possible states
+
 Dir = [
 
     'forward',
@@ -22,61 +31,74 @@ Dir = [
 
 
 
+# Speed setting for the motors (as per original code)
 
-#set motor speed to 75% of total possible power to motors
-MOTOR_SPEED = 75
-
-
-
-#api url
-API_STATUS_URL = "http://192.168.240.8:5000/status" 
+MOTOR_SPEED = 35
 
 
 
-#connects motor hat to PCA9685
+# The URL of the Flask server (api.py) running on your Mac
+
+# This IP must be accessible from the Raspberry Pi.
+
+API_STATUS_URL = "http://192.168.240.9:5000/status" 
+
+
+API_URL = "http://192.168.240.9:5000/upload_frame"
+
+def send_frame(frame_b64):
+    try:
+        requests.post(API_URL, json={"frame": frame_b64}, timeout=1)
+    except Exception as e:
+        print("Error sending frame:", e)
+
+cap = cv2.VideoCapture(0)
+
+# optional: make it smaller for speed
+cap.set(3, 320)  # width
+cap.set(4, 240)  # height
+
+# Initialize PWM Driver
+
 pwm = PCA9685(0x40, debug=False)
+
 pwm.setPWMFreq(50)
 
 
 
+# --- Motor Driver Class (Adjusted for Clarity) ---
+
 class MotorDriver():
-    """
-    This class works with the motor driver, and makes the motors run based on what we pick
-    
-    Parameters:
-    None
-    
-    Return: 
-    None
-    """
+
     def __init__(self):
-		"""
-		This is what creates all of the variables used for this class
-        
-        Parameters:
-        self
-        
-        Return:
-        None
-        """
-        self.PWMA = 0
-        self.AIN1 = 1
-        self.AIN2 = 2
-        self.PWMB = 5
-        self.BIN1 = 3
-        self.BIN2 = 4
+
+        # Define the PWM/Driver pins
+
+        self.PWMA = 0 # Left Motor Speed PWM Channel
+
+        self.AIN1 = 1 # Left Motor Direction 1
+
+        self.AIN2 = 2 # Left Motor Direction 2
+
+
+        self.PWMB = 5 # Right Motor Speed PWM Channel
+
+        self.BIN1 = 3 # Right Motor Direction 1
+
+        self.BIN2 = 4 # Right Motor Direction 2
 
 
 
     def MotorRun(self, motor_id, index, speed):
+
         """
-		This is the function that sends the power to the motor
-        
-        Parameters:
-        self, motor_id, index, speed
-        
-        Return:
-        None
+
+        Runs a single motor in a specified direction.
+
+        motor_id: 0 for Left, 1 for Right
+
+        index: 'forward' or 'backward'
+
         """
 
         if speed > 100:
@@ -85,95 +107,95 @@ class MotorDriver():
 
 
 
+        # Set PWM Duty Cycle (Speed)
 
         pwm.setDutycycle(self.PWMA if motor_id == 0 else self.PWMB, speed)
 
 
 
-        if motor_id == 0:
+        if motor_id == 0: # Left Motor
 
-            if index == 'forward':
+            if index == 'backward':
 
                 print("Left Motor: Forward")
 
-                pwm.setLevel(self.AIN1, 0)
+                pwm.setLevel(self.AIN1, 0) # Low
 
-                pwm.setLevel(self.AIN2, 1)
+                pwm.setLevel(self.AIN2, 1) # High
 
-            else:
+            else: # Must be 'backward'
 
                 print("Left Motor: Backward")
 
-                pwm.setLevel(self.AIN1, 1)
+                pwm.setLevel(self.AIN1, 1) # High
 
-                pwm.setLevel(self.AIN2, 0)
+                pwm.setLevel(self.AIN2, 0) # Low
 
-        else:
+        else: # Right Motor (motor_id == 1)
 
-            if index == 'forward':
+            if index == 'backward':
 
                 print("Right Motor: Forward")
 
-                pwm.setLevel(self.BIN1, 1)
+                pwm.setLevel(self.BIN1, 1) # High
 
-                pwm.setLevel(self.BIN2, 0)
+                pwm.setLevel(self.BIN2, 0) # Low
 
-            else:
+            else: # Must be 'backward'
 
                 print("Right Motor: Backward")
 
-                pwm.setLevel(self.BIN1, 0)
+                pwm.setLevel(self.BIN1, 0) # Low
 
-                pwm.setLevel(self.BIN2, 1)
+                pwm.setLevel(self.BIN2, 1) # High
         print("True")
 
 
     def MotorStop(self, motor_id):
-		"""
-		Stops the motor from moving
-        
-        Parameters:
-        Self, motor_id
-        
-        Return:
-        None        
-        """
+
+        """Stops a single motor by setting its PWM duty cycle to 0."""
 
         pwm.setDutycycle(self.PWMA if motor_id == 0 else self.PWMB, 0)
+
+
+
+# Initialize the motor driver
+
 Motor = MotorDriver()
 
 
 
 
 
+# --- Main Control Loop (Polling the Mac API) ---
 
 def execute_command(command):
-    """
-    Connects to API and is constantly sending GET requests so that it knows when the next button is pressed.
-    
-    Parameters:
-    command - which new command is being given
-    
-    Return:
-    None
-    """
     print(f"Executing new command: {command}")
 
+    """Executes the motor actions based on the command received from the API."""
 
-    if command == 'forward':
+    
+
+    # 0 = Left Motor, 1 = Right Motor (Assuming standard differential drive)
+
+    
+
+    if command == 'backward':
 
         Motor.MotorRun(0, 'forward', MOTOR_SPEED)
 
         Motor.MotorRun(1, 'forward', MOTOR_SPEED)
+        print("motor working")
 
-    elif command == 'backward':
+    elif command == 'forward':
 
         Motor.MotorRun(0, 'backward', MOTOR_SPEED)
 
         Motor.MotorRun(1, 'backward', MOTOR_SPEED)
-
+        print("back motor working")
     elif command == 'left':
 
+        # Pivot Left: Left motor backward, Right motor forward
 
         Motor.MotorRun(0, 'backward', MOTOR_SPEED)
 
@@ -181,57 +203,70 @@ def execute_command(command):
 
     elif command == 'right':
 
+        # Pivot Right: Left motor forward, Right motor backward
 
         Motor.MotorRun(0, 'forward', MOTOR_SPEED)
 
         Motor.MotorRun(1, 'backward', MOTOR_SPEED)
-
     elif command == 'stop':
-
         Motor.MotorStop(0)
-
         Motor.MotorStop(1)
-
+        print("Stopping motors")
     else:
 
+
         Motor.MotorStop(0)
 
         Motor.MotorStop(1)
+        print("Stopping motors error thing")
 
 
-#set state to stop so that it resets
+
+
 current_state = 'stop'
 
 
 
-print("Raspberry Pi Motor Client Starting. \nConnecting to API...")
+print("Raspberry Pi Motor Client started. Polling API server...")
 
 while True:
+    ret, frame = cap.read()
+    if not ret:
+        continue
 
+    # compress the frame (lower = faster)
+    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+    frame_b64 = base64.b64encode(buffer).decode('utf-8')
+
+    # send it in background thread
+    threading.Thread(target=send_frame, args=(frame_b64,)).start()
     try:
 
-        # Ask the API for status (send get request)
+        # 1. Poll the Mac API for the current command
 
         response = requests.get(API_STATUS_URL, timeout=1)
 
         response.raise_for_status()
 
-        
+        # 2. Extract the current direction
 
-		#Store this new data into a variable
+        #new_state = response.json().get('direction', 'stop')
+	# 2. Extract the current direction
+
         data=response.json()
+
+        #new_state = response.json().get('direction', 'stop')
+
         print(f"JSON Data: {data}")
 
         new_state = "stop"
 
-
-		#set new_state to new direction
         for direction in data:
                 if data[direction] == True:
 
                         new_state = direction
 
-		#Only change the motor function if the state is changed
+        # 3. Only execute motor commands if the state has changed
 
         if new_state != current_state:
 
@@ -241,11 +276,11 @@ while True:
 
             current_state = new_state
 
-        
-#Error handling------------------------
+
+
     except requests.exceptions.ConnectionError:
 
-
+        # Handle case where the Mac server is not running or unreachable
 
         if current_state != 'error':
 
@@ -279,7 +314,7 @@ while True:
 
 
 
-#get the get request stuff every .1 seconds
+    # Wait for a short period before polling again (polling rate)
 
 
-    time.sleep(0.1)
+    time.sleep(0.03)
