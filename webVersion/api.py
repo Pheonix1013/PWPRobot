@@ -35,17 +35,6 @@ async def stop():
         controls[key] = False
     return {"message": "All movements stopped"}
 
-# POST /<direction>
-@app.post("/{direction}")
-async def move(direction: str):
-    # Reset all controls
-    for key in controls:
-        controls[key] = False
-
-    # Toggle selected direction
-    controls[direction] = not controls[direction]
-
-    return {direction: controls[direction]}
 
 @app.post("/upload_frame")
 async def upload_frame(request: Request):
@@ -92,3 +81,15 @@ async def index():
 @app.get("/status")
 async def status():
     return controls
+
+# POST /<direction>
+@app.post("/{direction}")
+async def move(direction: str):
+    # Reset all controls
+    for key in controls:
+        controls[key] = False
+
+    # Toggle selected direction
+    controls[direction] = not controls[direction]
+
+    return {direction: controls[direction]}
