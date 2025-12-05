@@ -16,8 +16,6 @@ while True:
 
     height, width = frame.shape[:2]
 
-    print(str(width-1) + "," + str(height-1))
-
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
