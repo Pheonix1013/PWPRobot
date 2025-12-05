@@ -3,3 +3,5 @@ python3 -m uvicorn newapi:app --host 0.0.0.0 --port 5000 --reload
 
 
 ip address for robot: 192.168.240.23
+
+file size is 1280x960
