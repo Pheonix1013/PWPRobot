@@ -1,37 +1,52 @@
 import cv2
 import numpy as np
 
+# Initialize video capture
 cap = cv2.VideoCapture(0)
-
 if not cap.isOpened():
     print("Error: Cannot open camera.")
     exit()
 
+# Define the crop box (x, y, width, height)
+# Adjust these values based on your desired crop area and camera resolution
+x, y, w, h = 320, 240, 640, 480 # Example values, assuming a 640x480 frame
+
 while True:
     ret, frame = cap.read()
-
     if not ret:
         print("Error: Cannot receive frame.")
         break
 
-    height, width = frame.shape[:2]
+    # Ensure the crop box fits within the frame dimensions
+    frame_height, frame_width = frame.shape[:2]
+    x = max(0, min(x, frame_width - w))
+    y = max(0, min(y, frame_height - h))
+    w = min(w, frame_width - x)
+    h = min(h, frame_height - y)
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    # --- CROP ---
+    cropped_frame = frame[y:y+h, x:x+w]
 
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 100, minLineLength=100, maxLineGap=10)
+    # --- LINE DETECTION ON CROPPED FRAME ---
+    gray_cropped = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
+    edges_cropped = cv2.Canny(gray_cropped, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(edges_cropped, 1, np.pi/180, 50, minLineLength=50, maxLineGap=10) # Adjusted parameters for potentially smaller cropped area
 
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.line(cropped_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    cv2.imshow('Detected Lines', frame)
+    # --- DRAW RECTANGLE ON ORIGINAL IMAGE ---
+    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
 
+    # --- DISPLAY ---
+    cv2.imshow('Full Frame with Crop Box', frame)
+
+    # Exit on 'q' press
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+# Release resources
 cap.release()
 cv2.destroyAllWindows()
-
-
