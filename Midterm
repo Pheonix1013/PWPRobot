@@ -1,52 +1,142 @@
 import cv2
 import numpy as np
 
-# Initialize video capture
+def region_of_interest(img, vertices):
+    mask = np.zeros_like(img)
+    cv2.fillPoly(mask, vertices, 255)
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+
+def make_points(image, line):
+    if line is None:
+        return None
+    slope, intercept = line
+    y1 = int(image.shape[0])
+    y2 = int(y1 * (3/5))
+    x1 = int((y1 - intercept) / slope)
+    x2 = int((y2 - intercept) / slope)
+    return [[x1, y1, x2, y2]]
+
+def average_slope_intercept(image, lines):
+    left_fit = []
+    right_fit = []
+
+    if lines is None:
+        return None, None
+
+    for line in lines:
+        x1, y1, x2, y2 = line.reshape(4)
+        parameters = np.polyfit((x1, x2), (y1, y2), 1)
+        slope = parameters[0]
+        intercept = parameters[1]
+
+        if slope < 0:
+            left_fit.append((slope, intercept))
+        else:
+            right_fit.append((slope, intercept))
+
+    left_fit_average = np.average(left_fit, axis=0) if left_fit else None
+    right_fit_average = np.average(right_fit, axis=0) if right_fit else None
+
+    left_line = make_points(image, left_fit_average)
+    right_line = make_points(image, right_fit_average)
+
+    return left_line, right_line
+
+# 🔥 FIXED DRAW FUNCTION (avoids OpenCV errors)
+def draw_lines(img, lines, color=(0, 255, 0), thickness=2):
+    if not lines:
+        return
+
+    for line in lines:
+        if line is None:
+            continue
+
+        # Flatten shapes like [[x1, y1, x2, y2]]
+        line_arr = np.array(line).reshape(-1)
+
+        if line_arr.shape[0] != 4:
+            print("Unexpected line shape:", line)
+            continue
+
+        x1, y1, x2, y2 = map(int, line_arr)
+        cv2.line(img, (x1, y1), (x2, y2), color, thickness)
+
+def calculate_center_line_points(left_line, right_line):
+    if left_line is None or right_line is None:
+        return None
+
+    lx1, ly1, lx2, ly2 = left_line[0]
+    rx1, ry1, rx2, ry2 = right_line[0]
+
+    mx1 = int((lx1 + rx1) / 2)
+    my1 = ly1
+    mx2 = int((lx2 + rx2) / 2)
+    my2 = ly2
+
+    return [[mx1, my1, mx2, my2]]
+
+# -----------------------------------------
+# MAIN PROGRAM LOOP
+# -----------------------------------------
+
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Cannot open camera.")
-    exit()
+    cap = None
 
-# Define the crop box (x, y, width, height)
-# Adjust these values based on your desired crop area and camera resolution
-x, y, w, h = 320, 240, 640, 480 # Example values, assuming a 640x480 frame
-
-while True:
+while cap:
     ret, frame = cap.read()
     if not ret:
         print("Error: Cannot receive frame.")
         break
 
-    # Ensure the crop box fits within the frame dimensions
-    frame_height, frame_width = frame.shape[:2]
-    x = max(0, min(x, frame_width - w))
-    y = max(0, min(y, frame_height - h))
-    w = min(w, frame_width - x)
-    h = min(h, frame_height - y)
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray_frame, 50, 150)
 
-    # --- CROP ---
-    cropped_frame = frame[y:y+h, x:x+w]
+    height, width = frame.shape[:2]
+    vertices = np.array([[
+        (width*0.1, height),
+        (width*0.4, height*0.6),
+        (width*0.6, height*0.6),
+        (width*0.9, height)
+    ]], dtype=np.int32)
 
-    # --- LINE DETECTION ON CROPPED FRAME ---
-    gray_cropped = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
-    edges_cropped = cv2.Canny(gray_cropped, 50, 150, apertureSize=3)
-    lines = cv2.HoughLinesP(edges_cropped, 1, np.pi/180, 50, minLineLength=50, maxLineGap=10) # Adjusted parameters for potentially smaller cropped area
+    masked_edges = region_of_interest(edges, vertices)
 
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            cv2.line(cropped_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    lines = cv2.HoughLinesP(
+        masked_edges,
+        1,
+        np.pi / 180,
+        50,
+        minLineLength=10,
+        maxLineGap=50
+    )
 
-    # --- DRAW RECTANGLE ON ORIGINAL IMAGE ---
-    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
+    left_line, right_line = average_slope_intercept(frame, lines)
 
-    # --- DISPLAY ---
-    cv2.imshow('Full Frame with Crop Box', frame)
+    # Drawing surface
+    line_image = np.zeros_like(frame)
 
-    # Exit on 'q' press
+    # LEFT LANE = RED
+    draw_lines(line_image, [left_line], color=(0, 0, 255), thickness=5)
+
+    # RIGHT LANE = BLUE
+    draw_lines(line_image, [right_line], color=(255, 0, 0), thickness=5)
+
+    # MIDDLE CENTER LINE = GREEN
+    center_line = calculate_center_line_points(left_line, right_line)
+    draw_lines(line_image, [center_line], color=(0, 255, 0), thickness=3)
+
+    # Overlay on original frame
+    combo_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
+
+    cv2.imshow('Lane and Center Line Detection', combo_image)
+    cv2.imshow('Masked Edges (Processing View)', masked_edges)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release resources
-cap.release()
+if cap:
+    cap.release()
 cv2.destroyAllWindows()
