@@ -1,85 +1,128 @@
 import cv2
 import numpy as np
-from collections import deque
 
-# --- Parameters ---
+# params
 frame_width = 640
 frame_height = 480
-blur_ksize = 15
-canny_low = 50
-canny_high = 150
-hough_threshold = 50
-min_line_length = 80
-max_line_gap = 30
+blur_ksize = 9
+thresh_blocksize = 51
+thresh_C = 7
+morph_kernel = 7
+min_line_area = 300  # tune: min contour area to consider a stroke
+num_samples = 30     # how many horizontal slices to sample for midpoints
+smooth_window = 5    # smooth center x over neighbors
 
-# how many sample points vertically to take
-num_samples = 20
+# crop (same as yours)
+x, y, w, h = 160, 120, 320, 240
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
-def line_at_y(x1,y1,x2,y2, y_target):
-    """Return X position on the line at a specific Y."""
-    if y2 == y1:
+
+def sample_x_from_mask(mask, yy):
+    """Return the center x of mask at row yy (relative to mask coords) or None."""
+    # get all x positions where mask is nonzero at row yy
+    row = mask[yy, :]
+    xs = np.where(row > 0)[0]
+    if xs.size == 0:
         return None
-    t = (y_target - y1) / (y2 - y1)
-    if 0 <= t <= 1:
-        x = x1 + t * (x2 - x1)
-        return int(x)
-    return None
+    # choose center of the stroke at that row
+    return int((int(xs[0]) + int(xs[-1])) / 2)
+
+
+def moving_average(a, n=3):
+    if len(a) < n:
+        return a
+    ret = np.convolve(a, np.ones(n)/n, mode='same')
+    return ret.astype(int)
+
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    x2 = min(x + w, frame_width)
+    y2 = min(y + h, frame_height)
+    cropped = frame[y:y2, x:x2].copy()
+
+    # 1) preprocess -> create a binary mask of the dark strokes (works well for black lines on white)
+    gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 0)
-    edges = cv2.Canny(blur, canny_low, canny_high)
 
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, hough_threshold,
-                            minLineLength=min_line_length,
-                            maxLineGap=max_line_gap)
+    # adaptive threshold (better for uneven lighting), invert so strokes are white
+    mask = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                 cv2.THRESH_BINARY_INV, thresh_blocksize, thresh_C)
 
-    left_line = None
-    right_line = None
+    # morphological close to fill stroke interior and remove small holes
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_kernel, morph_kernel))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
 
-    # find the two longest-ish lines and treat them as left/right
-    if lines is not None:
-        # sort by length
-        lines_sorted = sorted(lines, key=lambda L: (L[0][2]-L[0][0])**2 + (L[0][3]-L[0][1])**2, reverse=True)
-        if len(lines_sorted) >= 2:
-            left_line = lines_sorted[0][0]
-            right_line = lines_sorted[1][0]
+    # 2) find contours -> pick the two largest as the two side strokes
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    strokes = []
+    for cnt in contours:
+        if cv2.contourArea(cnt) >= min_line_area:
+            strokes.append(cnt)
+        if len(strokes) >= 2:
+            break
 
-    if left_line is not None and right_line is not None:
-        x1l,y1l,x2l,y2l = left_line
-        x1r,y1r,x2r,y2r = right_line
+    # if we have at least two stroke-contours, make separate masks for them
+    center_pts = []
+    if len(strokes) >= 2:
+        # create blank masks for left/right stroke
+        stroke_mask1 = np.zeros_like(mask)
+        stroke_mask2 = np.zeros_like(mask)
+        cv2.drawContours(stroke_mask1, [strokes[0]], -1, 255, thickness=cv2.FILLED)
+        cv2.drawContours(stroke_mask2, [strokes[1]], -1, 255, thickness=cv2.FILLED)
 
-        # draw left + right lines
-        cv2.line(frame, (x1l,y1l),(x2l,y2l),(255,0,0),2)
-        cv2.line(frame, (x1r,y1r),(x2r,y2r),(255,0,0),2)
+        # optional: ensure stroke1 is left of stroke2 by comparing average x
+        def avg_x_of_mask(st_mask):
+            cols = np.where(st_mask.sum(axis=0) > 0)[0]
+            return cols.mean() if cols.size > 0 else 1e9
 
-        # sample midpoints
+        if avg_x_of_mask(stroke_mask1) > avg_x_of_mask(stroke_mask2):
+            # swap so stroke_mask1 is left, stroke_mask2 is right
+            stroke_mask1, stroke_mask2 = stroke_mask2, stroke_mask1
+
+        # sample many horizontal slices across the crop
         midpoints = []
         for i in range(num_samples):
-            y = int(frame_height * i / (num_samples - 1))
+            yy = int((h - 1) * i / (num_samples - 1))  # row in [0, h-1]
 
-            lx = line_at_y(x1l,y1l,x2l,y2l, y)
-            rx = line_at_y(x1r,y1r,x2r,y2r, y)
+            lx = sample_x_from_mask(stroke_mask1, yy)
+            rx = sample_x_from_mask(stroke_mask2, yy)
 
             if lx is not None and rx is not None:
+                # midpoint in cropped coordinates
                 mid_x = (lx + rx) // 2
-                midpoints.append((mid_x, y))
+                midpoints.append((mid_x, yy))
+                center_pts.append(mid_x)
 
-        # draw the center line from all midpoints
+        # smooth center x positions (moving average) to reduce jitter
+        if center_pts:
+            smoothed = moving_average(np.array(center_pts), n=smooth_window)
+            # replace midpoints x with smoothed values
+            for idx in range(min(len(midpoints), len(smoothed))):
+                midpoints[idx] = (int(smoothed[idx]), midpoints[idx][1])
+
+        # draw left/right stroke bounding (for debug) and centerline
+        cv2.drawContours(cropped, [strokes[0]], -1, (0,0,255), 2)  # left = red
+        cv2.drawContours(cropped, [strokes[1]], -1, (255,0,0), 2)  # right = blue
+
         if len(midpoints) > 1:
             for i in range(len(midpoints)-1):
-                cv2.line(frame, midpoints[i], midpoints[i+1], (0,0,255), 2)
+                cv2.line(cropped, midpoints[i], midpoints[i+1], (0,255,0), 3)  # center = green
 
-    cv2.imshow("Centerline From Midpoints", frame)
-    cv2.imshow("Edges", edges)
+    # preview crop box on full frame
+    cv2.rectangle(frame, (x,y), (x2,y2), (0,0,255), 2)
+
+    cv2.imshow("Full frame", frame)
+    cv2.imshow("Cropped", cropped)
+    cv2.imshow("Mask", mask)
 
     if cv2.waitKey(1) & 0xFF == 27:
         break
