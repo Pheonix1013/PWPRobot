@@ -4,9 +4,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import threading
 
-# -----------------------------
-# Line detection params
-# -----------------------------
+# Line detection variables for tuning in testing
 FRAME_W, FRAME_H = 640, 480
 BLUR_K = 9; TH_BLOCK = 51; TH_C = 7; MORPH_K = 7
 MIN_ARCLEN = 150; MIN_AREA = 200
@@ -14,9 +12,7 @@ NUM_SAMPLES = 60; SMOOTH_WIN = 7
 CROP_X,CROP_Y,CROP_W,CROP_H = 160,120,320,240
 LINE_THICK = 3
 
-# -----------------------------
-# Helper functions
-# -----------------------------
+#function for getting line of best fit
 def pleaseWork(contour_pts):
     pts = contour_pts.reshape(-1,2).astype(float)
     xs = pts[:,0]; ys=pts[:,1]; best=("v",0,0,1e12)
@@ -37,10 +33,7 @@ def extendLines(mode,m,b,w,h):
     if mode=="v": return (int(round(m*0+b)),0),(int(round(m*(h-1)+b)),h-1)
     else: return (0,int(round(m*0+b))),(w-1,int(round(m*(w-1)+b)))
 
-# -----------------------------
-# Camera thread
-# -----------------------------
-# <-- adjust camera index here for your secondary camera -->
+#getting cam feed
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
@@ -55,11 +48,12 @@ def camera_loop():
         if not ret: continue
         raw_copy = frame.copy()
 
-        # ---------------- Line detection
+        #line detection code
         x2,y2=CROP_X+CROP_W,CROP_Y+CROP_H
         cropped = frame[CROP_Y:y2,CROP_X:x2].copy()
         h,w=cropped.shape[:2]
-
+        
+        #code for grayscale, blurring, and cropping
         gray=cv2.cvtColor(cropped,cv2.COLOR_BGR2GRAY)
         blur=cv2.GaussianBlur(gray,(BLUR_K,BLUR_K),0)
         mask=cv2.adaptiveThreshold(blur,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -72,6 +66,7 @@ def camera_loop():
         good=[c for c in contours if cv2.arcLength(c,False)>=MIN_ARCLEN and cv2.contourArea(c)>=MIN_AREA]
         good=sorted(good,key=cv2.contourArea,reverse=True)[:2]
 
+        #checking if the length of the line is enough to get all the midpoints
         if len(good)>=2:
             cntA,cntB=good[0],good[1]
             mean_x=lambda c:c.reshape(-1,2)[:,0].mean()
@@ -81,6 +76,7 @@ def camera_loop():
             cv2.drawContours(cropped,[left_cnt],-1,(0,0,255),2)
             cv2.drawContours(cropped,[right_cnt],-1,(255,0,0),2)
 
+            #actually getting midpoint coordinates
             midpoints=[]
             if modeL=="v" and modeR=="v":
                 ys=np.linspace(0,h-1,NUM_SAMPLES)
@@ -98,15 +94,13 @@ def camera_loop():
 
         line_frame = cropped
 
-        # Draw red box on ROI in raw frame
+        # Draw red box on the region of interest in the raw frame
         cv2.rectangle(raw_copy,(CROP_X,CROP_Y),(CROP_X+CROP_W,CROP_Y+CROP_H),(0,0,255),2)
         raw_frame = raw_copy
 
 threading.Thread(target=camera_loop, daemon=True).start()
 
-# -----------------------------
-# Tkinter GUI
-# -----------------------------
+# tkinter code
 root = tk.Tk()
 root.title("Robot GUI")
 
@@ -115,6 +109,7 @@ canvas_height = 600
 canvas = tk.Canvas(root, width=canvas_width, height=canvas_height)
 canvas.pack()
 
+#self explanatory - every 0.3 seconds, refresh gui with new frame and new lines on the frame
 def update_gui():
     if line_frame is not None and raw_frame is not None:
         # resize frames
