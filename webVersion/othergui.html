@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Robot Login + GUI</title>
+  <style>
+    body { margin: 0; font-family: Arial; }
+    #login-screen {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100vh;
+    }
+    #app-screen { display: none; height: 100vh; }
+    table { width: 100%; height: 100%; border-collapse: collapse; }
+    td { border: 1px solid black; }
+  </style>
+</head>
+
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <h1>Robot Control Login</h1>
+  <input id="username" placeholder="Username" />
+  <input id="password" placeholder="Password" type="password" />
+  <br>
+  <button onclick="registerUser()">Register</button>
+  <button onclick="loginUser()">Login</button>
+  <p id="login-msg"></p>
+</div>
+
+<!-- MAIN GUI -->
+<div id="app-screen">
+  <table>
+    <tr height="50%">
+      <td width="50%" align="center">
+        <img src="http://127.0.0.1:5000/video_feed" width="480">
+      </td>
+
+      <td width="50%" align="center">
+        <h2>Controls</h2>
+        <table>
+          <tr align="center">
+            <td></td>
+            <td><button onclick="cmd('forward')">↑</button></td>
+            <td></td>
+          </tr>
+          <tr align="center">
+            <td><button onclick="cmd('left')">←</button></td>
+            <td><button onclick="stopMotor()">■</button></td>
+            <td><button onclick="cmd('right')">→</button></td>
+          </tr>
+          <tr align="center">
+            <td></td>
+            <td><button onclick="cmd('backward')">↓</button></td>
+            <td></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr height="50%">
+      <td width="50%" align="center">
+        <img src="http://127.0.0.1:5000/video_feed" width="480">
+      </td>
+
+      <td width="50%" align="left">
+        <h2>Console Log</h2>
+        <pre id="console-log" style="height:300px; overflow:auto; border:1px solid black;"></pre>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<script>
+const API = "http://127.0.0.1:5000";
+
+/* ---------- LOGIN & REGISTER ---------- */
+
+async function registerUser() {
+  const u = document.getElementById("username").value.trim();
+  const p = document.getElementById("password").value.trim();
+
+  const res = await fetch(API + "/register", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username: u, password: p})
+  });
+
+  const data = await res.json();
+  document.getElementById("login-msg").innerText = data.message || data.detail;
+}
+
+async function loginUser() {
+  const u = document.getElementById("username").value.trim();
+  const p = document.getElementById("password").value.trim();
+
+  const res = await fetch(API + "/login", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username: u, password: p})
+  });
+
+  const data = await res.json();
+  document.getElementById("login-msg").innerText = data.message || data.detail;
+
+  if (res.ok) {
+    document.getElementById("login-screen").style.display = "none";
+    document.getElementById("app-screen").style.display = "block";
+  }
+}
+
+/* ---------- ROBOT CONTROLS ---------- */
+
+async function cmd(direction) {
+  log("POST /" + direction);
+  const res = await fetch(API + "/" + direction, {method: "POST"});
+  log("Response: " + JSON.stringify(await res.json()));
+}
+
+async function stopMotor() {
+  log("POST /stop");
+  const res = await fetch(API + "/stop", {method: "POST"});
+  log("Response: " + JSON.stringify(await res.json()));
+}
+
+/* ---------- LOGGING ---------- */
+
+function log(msg) {
+  const box = document.getElementById("console-log");
+  box.textContent += msg + "\n";
+  box.scrollTop = box.scrollHeight;
+}
+</script>
+
+</body>
+</html>
+
