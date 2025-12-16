@@ -150,7 +150,7 @@ def process_and_update_frame():
     encode to JPEG, and put into latest_frame (thread-safe).
     Runs in a background thread.
     """
-    global latest_frame, cap
+    global latest_frame, latest_frame_raw, cap
 
     # if camera failed to open, bail out quietly
     if not cap.isOpened():
@@ -164,7 +164,7 @@ def process_and_update_frame():
 
         # ensure frame is expected size (some cameras ignore set())
         frame = cv2.resize(frame, (FRAME_W, FRAME_H))
-	# save RAW frame (no drawings)
+        # save RAW frame (no drawings)
         ret_raw, jpeg_raw = cv2.imencode('.jpg', frame)
         if ret_raw:
     	    with latest_frame_lock:
