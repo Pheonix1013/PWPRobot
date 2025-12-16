@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import threading
 import asyncio
+from datetime import datetime
 
 # ---------------- DB (sqlite) ----------------
 # store users locally, same as you used before
@@ -64,7 +65,18 @@ LINE_THICK = 3
 
 # ---------------- Globals for frame sharing ----------------
 latest_frame = None        # will hold latest processed jpeg bytes
+latest_frame_raw = None
 latest_frame_lock = threading.Lock()
+
+LOG_FILE = "user_log.txt"
+log_lock = threading.Lock()
+
+def log_event(message: str):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with log_lock:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{timestamp}] {message}\n")
+
 
 # ---------------- OpenCV camera init ----------------
 cap = cv2.VideoCapture(0)
@@ -149,7 +161,7 @@ def process_and_update_frame():
     encode to JPEG, and put into latest_frame (thread-safe).
     Runs in a background thread.
     """
-    global latest_frame, cap
+    global latest_frame, latest_frame_raw, cap
 
     # if camera failed to open, bail out quietly
     if not cap.isOpened():
@@ -163,6 +175,12 @@ def process_and_update_frame():
 
         # ensure frame is expected size (some cameras ignore set())
         frame = cv2.resize(frame, (FRAME_W, FRAME_H))
+        # save RAW frame (no drawings)
+        ret_raw, jpeg_raw = cv2.imencode('.jpg', frame)
+        if ret_raw:
+    	    with latest_frame_lock:
+                latest_frame_raw = jpeg_raw.tobytes()
+
 
         # --------- cropping + processing -----------
         x2 = min(CROP_X + CROP_W, FRAME_W)
@@ -343,6 +361,24 @@ async def video_feed():
             await asyncio.sleep(0.03)  # ~30 fps
     return StreamingResponse(frame_stream(), media_type="multipart/x-mixed-replace; boundary=frame")
 
+@app.get("/video_feed_raw")
+async def video_feed_raw():
+    async def frame_stream():
+        while True:
+            data = None
+            with latest_frame_lock:
+                if latest_frame_raw:
+                    data = latest_frame_raw
+            if data:
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n" +
+                       data + b"\r\n")
+            await asyncio.sleep(0.03)
+    return StreamingResponse(
+        frame_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
 # ---------------- Login / Register endpoints ----------------
 @app.post("/register")
 async def register(user: User):
@@ -352,6 +388,7 @@ async def register(user: User):
     try:
         cursor.execute("INSERT INTO users (username,password) VALUES (?,?)", (user.username, user.password))
         conn.commit()
+        log_event(f"REGISTER | user={user.username}")
         return {"message": "Registration successful"}
     except Exception:
         raise HTTPException(status_code=400, detail="Username already exists or invalid")
@@ -363,7 +400,10 @@ async def login(user: User):
     """
     cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (user.username, user.password))
     if cursor.fetchone():
+        log_event(f"LOGIN success | user={user.username}")
         return {"message": "Login successful"}
+
+    log_event(f"LOGIN failed | user={user.username}")
     raise HTTPException(status_code=401, detail="Invalid username/password")
 
 # ---------------- Controls ----------------
@@ -381,6 +421,8 @@ async def stop():
     """
     for k in controls:
         controls[k] = False
+
+    log_event("CONTROL | stop")
     return {"message": "All movements stopped"}
 
 @app.post("/{direction}")
@@ -393,6 +435,8 @@ async def move(direction: str):
     for k in controls:
         controls[k] = False
     controls[direction] = True
+
+    log_event(f"CONTROL | direction={direction}")
     return {direction: True}
 
 # ---------------- Serve the GUI HTML ----------------
@@ -460,7 +504,7 @@ async def index():
 
     <tr height="50%">
       <td width="50%">
-        <img src="/video_feed" width="480" height="320" alt="video"/>
+        <img src="/video_feed_raw" width="480" height="320" alt="video"/>
       </td>
       <td width="50%">
         <h3>Console Log</h3>
@@ -552,4 +596,3 @@ def shutdown_event():
         cap.release()
     except Exception:
         pass
-
