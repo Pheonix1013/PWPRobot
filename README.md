@@ -1,5 +1,5 @@
 to run the api on the web version:
-python3 -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload
+python3 -m uvicorn api:app --host 0.0.0.0 --port 5000 --reload
 
 python3 -m uvicorn pleaseWork:app --host 0.0.0.0 --port 5000 --reload
 
