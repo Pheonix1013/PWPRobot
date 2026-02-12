@@ -1,6 +1,4 @@
-# This file is now the client running on the Raspberry Pi.
-# It polls the Mac API server (172.20.140.4:5000) for the current command state.
-
+#import necessary functions
 import cv2
 import requests
 import base64
@@ -22,10 +20,7 @@ MOTOR_SPEED = 35
 API_STATUS_URL = "http://192.168.240.9:5000/status"
 API_URL = "http://192.168.240.9:5000/upload_frame"
 
-# -----------------------------
-# FIX 1 ONLY: stop spawning a new thread every frame
-# Use one background sender thread + shared latest frame buffer
-# -----------------------------
+
 latest_to_send = None
 send_lock = threading.Lock()
 
@@ -50,7 +45,6 @@ threading.Thread(target=sender_loop, daemon=True).start()
 
 cap = cv2.VideoCapture(0)
 
-# optional: make it smaller for speed
 cap.set(3, 320)  # width
 cap.set(4, 240)  # height
 
@@ -58,7 +52,7 @@ cap.set(4, 240)  # height
 pwm = PCA9685(0x40, debug=False)
 pwm.setPWMFreq(50)
 
-# --- Motor Driver Class (Adjusted for Clarity) ---
+# motors
 
 class MotorDriver():
 
@@ -103,7 +97,7 @@ class MotorDriver():
 
 Motor = MotorDriver()
 
-# --- Main Control Loop (Polling the Mac API) ---
+#main loop
 
 def execute_command(command):
     print(f"Executing new command: {command}")
@@ -146,11 +140,8 @@ while True:
     if not ret:
         continue
 
-    # compress the frame (lower = faster)
     _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
     frame_b64 = base64.b64encode(buffer).decode('utf-8')
-
-    # FIX 1: instead of spawning a new thread per frame, just update the latest buffer
     with send_lock:
         latest_to_send = frame_b64
 
