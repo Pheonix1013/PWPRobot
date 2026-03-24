@@ -30,11 +30,16 @@ autonomous_enabled = False
 auto_command = "stop"
 lane_status = "No lanes"
 
+BLUE_LOWER = np.array([90, 80, 50])
+BLUE_UPPER = np.array([140, 255, 255])
 
-last_left_line = None
-last_right_line = None
-miss_left = 10000
-miss_right = 10000
+HORIZONTAL_MIN_WIDTH_RATIO = 0.45
+HORIZONTAL_MAX_HEIGHT = 90
+BOTTOM_STOP_ZONE_RATIO = 0.82
+
+LANE_WIDTH_ESTIMATE = 260
+CENTER_DEADBAND = 35
+HARD_TURN_THRESHOLD = 85
 
 
 @app.post("/stop")
@@ -100,6 +105,52 @@ def get_mask(frame):
     return mask
 
 
+def detect_blue_stop_line(frame):
+    h, w = frame.shape[:2]
+
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    blue_mask = cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
+
+    kernel = np.ones((5, 5), np.uint8)
+    blue_mask = cv2.morphologyEx(blue_mask, cv2.MORPH_OPEN, kernel)
+    blue_mask = cv2.morphologyEx(blue_mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(blue_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    stop_detected = False
+    best_line = None
+    best_area = 0
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < 700:
+            continue
+
+        x, y, bw, bh = cv2.boundingRect(cnt)
+
+        width_ratio = bw / float(w)
+        bottom_y = y + bh
+
+        is_horizontal = bw > bh * 2.5
+        is_wide_enough = width_ratio >= HORIZONTAL_MIN_WIDTH_RATIO
+        is_short_enough = bh <= HORIZONTAL_MAX_HEIGHT
+        is_near_bottom = bottom_y >= int(h * BOTTOM_STOP_ZONE_RATIO)
+
+        if is_horizontal and is_wide_enough and is_short_enough:
+            if area > best_area:
+                best_area = area
+                line_y = y + bh // 2
+                best_line = (x, line_y, x + bw, line_y, is_near_bottom)
+
+    if best_line is not None:
+        x1, y1, x2, y2, is_near_bottom = best_line
+        stop_detected = is_near_bottom
+        color = (0, 0, 255) if stop_detected else (255, 0, 0)
+        cv2.line(frame, (x1, y1), (x2, y2), color, 4)
+
+    return stop_detected, frame
+
+
 def average_line(lines):
     if not lines:
         return None
@@ -163,14 +214,14 @@ def classify_lines(lines, w, h):
         length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
         mid_x = (x1 + x2) / 2
 
-        if abs(slope) < 0.6:
+        if abs(slope) < 0.45:
             continue
-        if length < 35:
+        if length < 30:
             continue
 
-        if slope < 0 and mid_x < w * 0.7:
+        if slope < 0 and mid_x < w * 0.72:
             left_lines.append((x1, y1, x2, y2))
-        elif slope > 0 and mid_x > w * 0.3:
+        elif slope > 0 and mid_x > w * 0.28:
             right_lines.append((x1, y1, x2, y2))
 
     return left_lines, right_lines
@@ -179,42 +230,69 @@ def classify_lines(lines, w, h):
 def compute_auto_command(left_fit, right_fit, w, h):
     global lane_status
 
-    y_look = int(h * 0.85)
+    y_look = int(h * 0.82)
     frame_center = w // 2
 
-    if left_fit is not None and right_fit is not None:
+    x_left = None
+    x_right = None
+    lane_center = None
+    mode = None
+
+    if left_fit is not None:
         x_left = int(left_fit[0] * y_look + left_fit[1])
+
+    if right_fit is not None:
         x_right = int(right_fit[0] * y_look + right_fit[1])
+
+    if x_left is not None and x_right is not None:
         lane_center = (x_left + x_right) // 2
-        error = lane_center - frame_center
-        lane_status = f"Both lanes | err={error}"
+        mode = "Both lanes"
+    elif x_left is not None:
+        lane_center = x_left + LANE_WIDTH_ESTIMATE // 2
+        mode = "Left lane only"
+    elif x_right is not None:
+        lane_center = x_right - LANE_WIDTH_ESTIMATE // 2
+        mode = "Right lane only"
+    else:
+        lane_status = "No lanes"
+        return "stop", None, None
 
-        if abs(error) <= 20:
-            return "forward", lane_center, error
-        elif error < -20:
-            return "left", lane_center, error
-        else:
-            return "right", lane_center, error
+    lane_center = max(0, min(w - 1, lane_center))
+    error = lane_center - frame_center
 
-    lane_status = "No lanes"
-    return "stop", None, None
+    lane_status = f"{mode} | err={error}"
+
+    if abs(error) <= CENTER_DEADBAND:
+        return "forward", lane_center, error
+
+    if error < -HARD_TURN_THRESHOLD:
+        return "left", lane_center, error
+
+    if error > HARD_TURN_THRESHOLD:
+        return "right", lane_center, error
+
+    if error < 0:
+        return "left", lane_center, error
+
+    return "right", lane_center, error
 
 
 def process_frame(frame):
-    global last_left_line, last_right_line, miss_left, miss_right, auto_command
+    global auto_command, autonomous_enabled, lane_status
 
     frame = cv2.resize(frame, (640, 480))
 
+    stop_detected, frame = detect_blue_stop_line(frame)
+
     mask = get_mask(frame)
-    mask_pixels = int(np.sum(mask > 0))
 
     lines = cv2.HoughLinesP(
         mask,
         1,
         np.pi / 180,
-        threshold=40,
-        minLineLength=35,
-        maxLineGap=25
+        threshold=35,
+        minLineLength=30,
+        maxLineGap=30
     )
 
     h, w = frame.shape[:2]
@@ -224,45 +302,35 @@ def process_frame(frame):
     left_fit = average_line(left_lines)
     right_fit = average_line(right_lines)
 
-    if left_fit is not None:
-        last_left_line = left_fit
-        miss_left = 0
-    else:
-        miss_left += 1
+    draw_line(frame, left_fit, (0, 0, 255), 4)
+    draw_line(frame, right_fit, (255, 0, 0), 4)
 
-    if right_fit is not None:
-        last_right_line = right_fit
-        miss_right = 0
-    else:
-        miss_right += 1
-
-    draw_left = last_left_line if (last_left_line is not None and miss_left < 6) else None
-    draw_right = last_right_line if (last_right_line is not None and miss_right < 6) else None
-
-    draw_line(frame, draw_left, (0, 0, 255), 4)
-    draw_line(frame, draw_right, (255, 0, 0), 4)
-
-    actual_left = left_fit
-    actual_right = right_fit
-
-    cmd, lane_center, error = compute_auto_command(actual_left, actual_right, w, h)
-    auto_command = cmd
+    cmd, lane_center, error = compute_auto_command(left_fit, right_fit, w, h)
 
     frame_center = w // 2
-    y_look = int(h * 0.85)
+    y_look = int(h * 0.82)
 
     cv2.line(frame, (frame_center, h - 1), (frame_center, 0), (255, 255, 0), 2)
+    cv2.line(frame, (0, y_look), (w, y_look), (255, 255, 0), 2)
 
     if lane_center is not None:
         cv2.circle(frame, (lane_center, y_look), 8, (0, 255, 0), -1)
         cv2.line(frame, (frame_center, y_look), (lane_center, y_look), (0, 255, 255), 2)
 
-    cv2.putText(frame, f"mask_pixels={mask_pixels}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    cv2.putText(frame, f"auto={auto_command}", (10, 60),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    cv2.putText(frame, lane_status, (10, 90),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    no_current_lines = left_fit is None and right_fit is None
+
+    if stop_detected:
+        auto_command = "stop"
+        if autonomous_enabled:
+            autonomous_enabled = False
+            lane_status = "Blue stop line reached | automation stopped"
+        else:
+            lane_status = "Blue stop line detected"
+    elif no_current_lines:
+        auto_command = "stop"
+        lane_status = "No lanes"
+    else:
+        auto_command = cmd
 
     return frame
 
