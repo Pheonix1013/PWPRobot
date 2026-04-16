@@ -14,7 +14,7 @@ latest_frame_raw = None
 autonomous_enabled = False
 auto_command = "stop"
 lane_status = "No lanes"
-marvin_detected = False  # New flag for the popup
+marvin_detected = False 
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,32 +40,38 @@ def detect_marvin_logic(frame):
     if des_t is None: return frame, False
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     kp_f, des_f = sift.detectAndCompute(gray, None)
-    if des_f is None or len(des_f) < 10: return frame, False
+    
+    if des_f is None or len(des_f) < 20: return frame, False # Raised threshold
+
     matches = flann.knnMatch(des_t, des_f, k=2)
     good = [m for m, n in matches if m.distance < 0.7 * n.distance]
-    if len(good) > 12:
+
+    # STICKER VERIFICATION LOGIC
+    # We now require 20 solid matches instead of 12 to prevent false positives
+    if len(good) > 20: 
         src_pts = np.float32([kp_t[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
         dst_pts = np.float32([kp_f[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-        M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+        
+        # RANSAC helps filter out "outliers" (random points that don't fit the pattern)
+        M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+        
         if M is not None:
-            h, w = marvin_template.shape
-            pts = np.float32([[0, 0], [0, h-1], [w-1, h-1], [w-1, 0]]).reshape(-1, 1, 2)
-            dst = cv2.perspectiveTransform(pts, M)
-            frame = cv2.polylines(frame, [np.int32(dst)], True, (0, 0, 255), 4, cv2.LINE_AA)
-            return frame, True
+            # Check how many points actually fit the Marvin shape (inliers)
+            matchesMask = mask.ravel().tolist()
+            if sum(matchesMask) > 15: # Must have at least 15 points in the correct spot
+                h, w = marvin_template.shape
+                pts = np.float32([[0, 0], [0, h-1], [w-1, h-1], [w-1, 0]]).reshape(-1, 1, 2)
+                dst = cv2.perspectiveTransform(pts, M)
+                frame = cv2.polylines(frame, [np.int32(dst)], True, (0, 0, 255), 4, cv2.LINE_AA)
+                return frame, True
+                
     return frame, False
 
 def process_frame(frame):
     global auto_command, autonomous_enabled, lane_status, marvin_detected
     frame = cv2.resize(frame, (640, 480))
-    
-    # 1. Detect Marvin
     frame, marvin_detected = detect_marvin_logic(frame)
-    
-    # 2. Add your original Lane/Stop Line logic here
-    # (Simplified for the template, keep your original get_mask/classify_lines calls)
-    lane_status = "Scanning..." if not marvin_detected else "ENTITY DETECTED"
-    
+    lane_status = "Scanning..." if not marvin_detected else "MARVIN SPOTTED!"
     return frame
 
 @app.post("/upload_frame")
@@ -90,7 +96,6 @@ async def status():
     for k in controls:
         if controls[k]: manual_command = k; break
     return {
-        "controls": controls,
         "manual_command": manual_command,
         "autonomous": autonomous_enabled,
         "auto_command": auto_command,
