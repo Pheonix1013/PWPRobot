@@ -7,20 +7,36 @@
     body { font-family: Arial, sans-serif; margin: 0; background: #111; color: white; }
     table { width: 100vw; height: 100vh; border-collapse: collapse; }
     td { border: 1px solid #333; text-align: center; vertical-align: middle; }
-    button {
-      width: 110px;
-      height: 55px;
-      font-size: 18px;
-      margin: 6px;
-      cursor: pointer;
-    }
+    button { width: 110px; height: 55px; font-size: 18px; margin: 6px; cursor: pointer; }
     .play { background: #1f9d55; color: white; }
     .pause { background: #c53030; color: white; }
     .manual { background: #2b6cb0; color: white; }
     #statusBox { font-size: 20px; line-height: 1.8; }
+
+    /* POPUP STYLING */
+    #marvinAlert {
+      display: none; 
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(255, 0, 0, 0.9);
+      color: white;
+      padding: 50px;
+      border: 10px solid white;
+      border-radius: 20px;
+      font-size: 60px;
+      font-weight: bold;
+      text-align: center;
+      z-index: 1000;
+      box-shadow: 0 0 50px #000;
+      pointer-events: none; /* Allows clicking through if needed */
+    }
   </style>
 </head>
 <body>
+
+  <div id="marvinAlert">WE ARE NOT ALONE HERE</div>
+
   <table>
     <tr height="50%">
       <td width="50%">
@@ -46,14 +62,12 @@
             <td></td>
           </tr>
         </table>
-
         <div style="margin-top:20px;">
           <button class="play" onclick="startAuto()">▶ Start Auto</button>
           <button class="pause" onclick="stopAuto()">⏸ Stop Auto</button>
         </div>
       </td>
     </tr>
-
     <tr height="50%">
       <td width="50%">
         <h3>Raw Feed</h3>
@@ -69,47 +83,23 @@
     const API_BASE = "http://127.0.0.1:5000";
 
     async function sendCommand(direction) {
-      try {
-        await fetch(`${API_BASE}/${direction}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error(error);
-      }
+      try { await fetch(`${API_BASE}/${direction}`, { method: "POST" }); } 
+      catch (error) { console.error(error); }
     }
 
     async function stopMotor() {
-      try {
-        await fetch(`${API_BASE}/stop`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error(error);
-      }
+      try { await fetch(`${API_BASE}/stop`, { method: "POST" }); } 
+      catch (error) { console.error(error); }
     }
 
     async function startAuto() {
-      try {
-        await fetch(`${API_BASE}/autonomous/start`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error(error);
-      }
+      try { await fetch(`${API_BASE}/autonomous/start`, { method: "POST" }); } 
+      catch (error) { console.error(error); }
     }
 
     async function stopAuto() {
-      try {
-        await fetch(`${API_BASE}/autonomous/stop`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error(error);
-      }
+      try { await fetch(`${API_BASE}/autonomous/stop`, { method: "POST" }); } 
+      catch (error) { console.error(error); }
     }
 
     async function refreshStatus() {
@@ -117,11 +107,20 @@
         const response = await fetch(`${API_BASE}/status`);
         const data = await response.json();
 
+        // Check for Marvin Detection and show/hide popup
+        const alertDiv = document.getElementById("marvinAlert");
+        if (data.marvin_detected) {
+            alertDiv.style.display = "block";
+        } else {
+            alertDiv.style.display = "none";
+        }
+
         document.getElementById("statusBox").innerHTML = `
           <div><b>Autonomous:</b> ${data.autonomous}</div>
           <div><b>Manual command:</b> ${data.manual_command}</div>
           <div><b>Auto command:</b> ${data.auto_command}</div>
           <div><b>Lane status:</b> ${data.lane_status}</div>
+          <div><b>Marvin Detected:</b> ${data.marvin_detected}</div>
         `;
       } catch (e) {
         document.getElementById("statusBox").innerHTML = "Status unavailable";
