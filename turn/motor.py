@@ -1,24 +1,25 @@
 import cv2
 import requests
 import base64
+import queue
 import threading
-from PCA9685 import PCA9685
 import time
+from PCA9685 import PCA9685
 
 MOTOR_SPEED = 15
-TURN_INTENSITY = 12 # Adjust this to make turns sharper/gentler
+TURN_INTENSITY = 12
+
+# Proportional steering for autonomous mode
+KP = 0.12       # gain: error (pixels) -> speed differential
+MAX_STEER = 10  # max speed differential added to either motor
 
 API_STATUS_URL = "http://192.168.240.2:5000/status"
 API_UPLOAD_URL = "http://192.168.240.2:5000/upload_frame"
 
-def send_frame(frame_b64):
-    try:
-        requests.post(API_UPLOAD_URL, json={"frame": frame_b64}, timeout=1)
-    except:
-        pass
-
 cap = cv2.VideoCapture(0)
-cap.set(3, 320); cap.set(4, 240)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
 pwm = PCA9685(0x40, debug=False)
 pwm.setPWMFreq(50)
 
@@ -41,6 +42,19 @@ class MotorDriver():
 
 Motor = MotorDriver()
 
+# Single sender thread with a 1-frame queue — drops frames if sender is busy
+frame_queue = queue.Queue(maxsize=1)
+
+def frame_sender():
+    while True:
+        frame_b64 = frame_queue.get()
+        try:
+            requests.post(API_UPLOAD_URL, json={"frame": frame_b64}, timeout=1)
+        except:
+            pass
+
+threading.Thread(target=frame_sender, daemon=True).start()
+
 def execute_command(command):
     if command == 'backward':
         Motor.MotorRun(0, 'forward', MOTOR_SPEED)
@@ -61,16 +75,41 @@ current_state = 'stop'
 while True:
     ret, frame = cap.read()
     if ret:
-        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
         f_b64 = base64.b64encode(buffer).decode('utf-8')
-        threading.Thread(target=send_frame, args=(f_b64,), daemon=True).start()
+        try:
+            frame_queue.put_nowait(f_b64)
+        except queue.Full:
+            pass  # sender still busy, drop this frame
 
     try:
         data = requests.get(API_STATUS_URL, timeout=1).json()
-        new_state = data.get("auto_command") if data.get("autonomous") else data.get("manual_command")
-        if new_state != current_state:
-            execute_command(new_state)
-            current_state = new_state
+
+        if data.get("autonomous"):
+            auto_cmd = data.get("auto_command", "stop")
+            error = data.get("auto_error", 0)
+
+            if auto_cmd == "stop":
+                Motor.MotorStop(0)
+                Motor.MotorStop(1)
+            else:
+                # Proportional steering: scale error into a speed differential
+                # Positive error = lane center is right of frame center = steer right
+                # motor 0 (left side) faster turns robot right, motor 1 (right side) faster turns left
+                steer = int(KP * error)
+                steer = max(-MAX_STEER, min(MAX_STEER, steer))
+                Motor.MotorRun(0, 'backward', max(1, MOTOR_SPEED + steer))
+                Motor.MotorRun(1, 'backward', max(1, MOTOR_SPEED - steer))
+
+            current_state = f"auto:{auto_cmd}"
+        else:
+            new_state = data.get("manual_command", "stop")
+            if new_state != current_state:
+                execute_command(new_state)
+                current_state = new_state
+
     except:
-        execute_command('stop')
+        Motor.MotorStop(0)
+        Motor.MotorStop(1)
+
     time.sleep(0.03)

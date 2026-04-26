@@ -25,7 +25,7 @@
     <tr height="50%">
       <td width="50%">
         <h3>Processed Feed</h3>
-        <img src="http://127.0.0.1:5000/video_feed" width="480" height="320">
+        <img src="/video_feed" width="480" height="320">
       </td>
       <td width="50%">
         <h3>Controls</h3>
@@ -57,7 +57,7 @@
     <tr height="50%">
       <td width="50%">
         <h3>Raw Feed</h3>
-        <img src="http://127.0.0.1:5000/video_feed_raw" width="480" height="320">
+        <img src="/video_feed_raw" width="480" height="320">
       </td>
       <td width="50%">
         <div id="statusBox">Loading status...</div>
@@ -66,7 +66,7 @@
   </table>
 
   <script>
-    const API_BASE = "http://127.0.0.1:5000";
+    const API_BASE = "";
 
     async function sendCommand(direction) {
       try {
