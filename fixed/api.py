@@ -17,9 +17,8 @@ auto_command = "stop"
 auto_error = 0
 lane_status = "No lanes"
 
-# Memory for recovery: tracks the last known lane configuration
-# Options: "both", "left", "right"
-last_seen_lane = "both"
+# Recovery memory: last non-forward steering direction
+last_steering_cmd = "stop"
 
 app.add_middleware(
     CORSMiddleware,
@@ -148,36 +147,35 @@ def classify_lines(lines, w, h):
     return left_lines, right_lines
 
 def compute_auto_command(left_fit, right_fit, w, h):
-    global lane_status, last_seen_lane, auto_error
+    global lane_status, last_steering_cmd, auto_error
     y_look = int(h * 0.82)
     frame_center = w // 2
     x_left = int(left_fit[0] * y_look + left_fit[1]) if left_fit else None
     x_right = int(right_fit[0] * y_look + right_fit[1]) if right_fit else None
 
     if x_left is not None and x_right is not None:
-        last_seen_lane = "both"
         lane_center = (x_left + x_right) // 2
         mode = "Both lanes"
     elif x_left is not None:
-        last_seen_lane = "left"
         lane_center = x_left + LANE_WIDTH_ESTIMATE // 2
-        mode = "Left lane only (Turning Right)"
+        mode = "Left lane only"
     elif x_right is not None:
-        last_seen_lane = "right"
         lane_center = x_right - LANE_WIDTH_ESTIMATE // 2
-        mode = "Right lane only (Turning Left)"
+        mode = "Right lane only"
     else:
-        # Recovery: turn toward where we last saw a lane boundary
-        if last_seen_lane == "left":
-            lane_status = "Lanes Lost: Searching Right"
-            auto_error = 100
-            return "right", None, 100
-        elif last_seen_lane == "right":
-            lane_status = "Lanes Lost: Searching Left"
-            auto_error = -100
-            return "left", None, -100
+        # Recovery: continue in whatever direction we were last steering.
+        # Using last steering command (not last seen lane) means mid-turn
+        # lane loss keeps the turn going instead of reversing it.
+        if last_steering_cmd == "right":
+            lane_status = "Lanes Lost: continuing right"
+            auto_error = 80
+            return "right", None, 80
+        elif last_steering_cmd == "left":
+            lane_status = "Lanes Lost: continuing left"
+            auto_error = -80
+            return "left", None, -80
         else:
-            lane_status = "No lanes/memory"
+            lane_status = "No lanes"
             auto_error = 0
             return "stop", None, 0
 
@@ -186,8 +184,12 @@ def compute_auto_command(left_fit, right_fit, w, h):
     auto_error = error
     lane_status = f"{mode} | err={error}"
 
-    if abs(error) <= CENTER_DEADBAND: return "forward", lane_center, error
-    return ("left" if error < 0 else "right"), lane_center, error
+    if abs(error) <= CENTER_DEADBAND:
+        return "forward", lane_center, error
+
+    cmd = "left" if error < 0 else "right"
+    last_steering_cmd = cmd  # remember which way we were turning
+    return cmd, lane_center, error
 
 def process_frame(frame):
     global auto_command, autonomous_enabled, lane_status
