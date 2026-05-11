@@ -12,3 +12,4 @@ play button for gui (put after up arrow):
             <td></td>
           </tr>
 
+green orange yellow blue purple
