@@ -9,9 +9,14 @@ from PCA9685 import PCA9685
 MOTOR_SPEED = 13
 TURN_INTENSITY = 12
 
-# Proportional steering for autonomous mode
+# Proportional steering for autonomous mode.  The API sends a signed pixel
+# error: negative means the tape center is left of camera center, positive is
+# right.  auto_speed lets the API briefly stop after losing the tape, then
+# search slowly toward the last known direction.
 KP = 0.12       # gain: error (pixels) -> speed differential
 MAX_STEER = 10  # max speed differential added to either motor
+PAPER_TURN_SPEED = min(100, MOTOR_SPEED + TURN_INTENSITY + 8)
+MIN_AUTO_SPEED = 1
 
 API_STATUS_URL = "http://192.168.240.2:5000/status"
 API_UPLOAD_URL = "http://192.168.240.2:5000/upload_frame"
@@ -85,21 +90,42 @@ while True:
     try:
         data = requests.get(API_STATUS_URL, timeout=1).json()
 
-        if data.get("autonomous"):
+        if data.get("martian_detected") or data.get("robot_state") in ("MARTIAN_DETECTED", "MARTIAN_STOPPED"):
+            Motor.MotorStop(0)
+            Motor.MotorStop(1)
+            current_state = "martian_stop"
+        elif data.get("autonomous") or data.get("robot_state") == "PAPER_AVOIDANCE":
             auto_cmd = data.get("auto_command", "stop")
             error = data.get("auto_error", 0)
 
-            if auto_cmd == "stop":
+            speed_scale = float(data.get("auto_speed", 1.0))
+            base_speed = int(MOTOR_SPEED * max(0.0, min(1.0, speed_scale)))
+
+            avoidance_phase = data.get("avoidance_phase", "idle")
+
+            if auto_cmd == "stop" or base_speed < MIN_AUTO_SPEED:
                 Motor.MotorStop(0)
                 Motor.MotorStop(1)
+            elif auto_cmd == "backward":
+                Motor.MotorRun(0, 'forward', max(MIN_AUTO_SPEED, base_speed))
+                Motor.MotorRun(1, 'forward', max(MIN_AUTO_SPEED, base_speed))
+            elif data.get("robot_state") == "PAPER_AVOIDANCE" and avoidance_phase == "turn_away" and auto_cmd in ("left", "right"):
+                # Hard pivot only during the dedicated obstacle-avoidance turn phase;
+                # normal autonomous steering below remains a smooth proportional arc.
+                if auto_cmd == "right":
+                    Motor.MotorRun(0, 'backward', PAPER_TURN_SPEED)
+                    Motor.MotorRun(1, 'forward', PAPER_TURN_SPEED)
+                else:
+                    Motor.MotorRun(0, 'forward', PAPER_TURN_SPEED)
+                    Motor.MotorRun(1, 'backward', PAPER_TURN_SPEED)
             else:
-                # Proportional steering: scale error into a speed differential
-                # Positive error = lane center is right of frame center = steer right
-                # motor 0 (left side) faster turns robot right, motor 1 (right side) faster turns left
+                # Proportional steering: scale error into a speed differential.
+                # Positive error = tape center is right of frame center = steer right.
+                # motor 0 (left side) faster turns robot right, motor 1 (right side) faster turns left.
                 steer = int(KP * error)
                 steer = max(-MAX_STEER, min(MAX_STEER, steer))
-                Motor.MotorRun(0, 'backward', max(1, MOTOR_SPEED + steer))
-                Motor.MotorRun(1, 'backward', max(1, MOTOR_SPEED - steer))
+                Motor.MotorRun(0, 'backward', max(MIN_AUTO_SPEED, base_speed + steer))
+                Motor.MotorRun(1, 'backward', max(MIN_AUTO_SPEED, base_speed - steer))
 
             current_state = f"auto:{auto_cmd}"
         else:
