@@ -50,6 +50,7 @@
         <div style="margin-top:20px;">
           <button class="play" onclick="startAuto()">▶ Start Auto</button>
           <button class="pause" onclick="stopAuto()">⏸ Stop Auto</button>
+          <button class="pause" onclick="resetMartianStop()">Reset Martian</button>
         </div>
       </td>
     </tr>
@@ -112,6 +113,17 @@
       }
     }
 
+    async function resetMartianStop() {
+      try {
+        await fetch(`${API_BASE}/martian/reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
     async function refreshStatus() {
       try {
         const response = await fetch(`${API_BASE}/status`);
@@ -120,7 +132,13 @@
         document.getElementById("statusBox").innerHTML = `
           <div><b>Autonomous:</b> ${data.autonomous}</div>
           <div><b>Manual command:</b> ${data.manual_command}</div>
+          <div><b>Robot state:</b> ${data.robot_state}</div>
           <div><b>Auto command:</b> ${data.auto_command}</div>
+          <div><b>Auto speed:</b> ${data.auto_speed}</div>
+          <div><b>Martian detected:</b> ${data.martian_detected}</div>
+          <div><b>Martian confidence:</b> ${data.martian_confidence ?? "none"}</div>
+          <div><b>Paper ball:</b> ${data.paper_ball_detected}</div>
+          <div><b>Avoidance phase:</b> ${data.avoidance_phase}</div>
           <div><b>Lane status:</b> ${data.lane_status}</div>
         `;
       } catch (e) {
